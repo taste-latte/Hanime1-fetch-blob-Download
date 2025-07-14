@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Hanime1 [fetch + blob] Download + 管理清單 (videoId 修正版)
+// @name         Hanime1 [fetch + blob] Download + 管理清單(暫時只顯示圖示) (videoId 修正版)
 // @namespace    http://tampermonkey.net/
-// @version      1.5
-// @description  使用 videoId 精準紀錄已下載影片，修復已下載圖示錯位問題，下載影片自動命名、顯示進度、管理清單，支援單筆刪除與固定清除按鈕。
+// @version      1.51
+// @description  使用 videoId 精準紀錄已下載影片，修復已下載圖示錯位問題，下載影片自動命名、顯示進度、管理清單，支援單筆刪除與固定清除按鈕。下載清單暫時只有圖示(加上文字會使影片縮圖變小)
 // @match        *://hanime1.me/*
 // @grant        none
 // ==/UserScript==
@@ -116,9 +116,12 @@
         const sel = arr.find(m => m[3] === '1080p') || arr.find(m => m[3] === '720p') || arr[0];
         const quality = sel[3];
         const rawUrl = sel[1].replace(/&amp;/g, '&');
-        let linkName = decodeHTML(sel[4]).replace(/[\\/:*?"<>|]/g, '').trim();
+        let linkName = decodeHTML(sel[4] || '').replace(/[\\/:*?"<>|]/g, '').trim();
         if (/^\d+$/.test(linkName)) linkName = '';
-        const finalName = `${rawTitle}-(hanime1.me)-${quality}.MP4`;
+
+        // 處理 rawTitle 的 fallback 判斷
+        const hasHtmlEntities = /&(?:#\d+|[a-z]+);/i.test(rawTitle);  // 檢查是否含有 HTML 實體
+        const finalName = `${(hasHtmlEntities && linkName ? linkName : rawTitle)}-(hanime1.me)-${quality}.MP4`;
 
         if (isDownloaded(videoId)) {
             const re = confirm(`⚠️ 此影片已下載過：\n${finalName}\n\n是否重新下載？`);
@@ -191,26 +194,35 @@
     }
 
     function createDownloadManager() {
-       const navIcons = document.querySelectorAll('.nav-icon.pull-right');
-const navContainer = navIcons[navIcons.length - 1]?.parentElement;
-
-const btn = document.createElement('a');
-btn.href = '#';
-btn.className = 'nav-icon pull-right';
-btn.style.paddingLeft = '10px';
-btn.innerHTML = `
+        const navIcons = document.querySelectorAll('.nav-icon.pull-right');
+        const btn = document.createElement('a');
+        btn.href = '#';
+        btn.className = 'nav-icon pull-right';
+        btn.style.paddingLeft = '10px';
+        btn.title = '下載紀錄';
+        btn.innerHTML = `
   <span class="material-icons-outlined" style="vertical-align: middle; font-size: 28px;">history</span>
-  <span style="vertical-align: middle; font-size: 14px; font-weight: bold;">下載紀錄</span>
 `;
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'inline-block';
+        wrapper.style.verticalAlign = 'middle';
+        wrapper.style.marginLeft = '8px';
+        wrapper.appendChild(btn);
+        // 新增支援首頁與其他頁導覽列
+        const navContainer =
+              document.getElementById('main-nav') ||
+              document.getElementById('main-nav-home') ||
+              document.body;
 
-if (navContainer) navContainer.appendChild(btn);
-else document.body.appendChild(btn); // Fallback
+        navContainer.appendChild(wrapper);
+        if (navContainer) navContainer.appendChild(btn);
+        else document.body.appendChild(btn); // Fallback
 
-btn.onclick = (e) => {
-    e.preventDefault();
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    updateDownloadList();
-};
+        btn.onclick = (e) => {
+            e.preventDefault();
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            updateDownloadList();
+        };
 
         const panel = document.createElement('div');
         Object.assign(panel.style, {
@@ -291,21 +303,21 @@ btn.onclick = (e) => {
                 b.id = 'tm-dl-btn';
                 b.textContent = '⬇️ 下載此影片';
                 Object.assign(b.style, {
-    marginLeft: '8px',
-    padding: '4px 10px',
-    background: 'rgba(0,0,0,0.7)',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    fontSize: 'clamp(10px, 1.4vw, 16px)', // 根據螢幕大小與容器寬度自動調整字體
-    fontWeight: 'bold',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',       // 不允許換行
-    maxWidth: 'fit-content',    // 不設死寬度，只用內容寬度
-    overflow: 'hidden',         // 保險：超出隱藏
-    textOverflow: 'ellipsis',   // 保險：避免意外換行
-    flexShrink: 0               // 不允許按鈕被擠壓縮小
-});
+                    marginLeft: '8px',
+                    padding: '4px 10px',
+                    background: 'rgba(0,0,0,0.7)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    fontSize: 'clamp(10px, 1.4vw, 16px)', // 根據螢幕大小與容器寬度自動調整字體
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',       // 不允許換行
+                    maxWidth: 'fit-content',    // 不設死寬度，只用內容寬度
+                    overflow: 'hidden',         // 保險：超出隱藏
+                    textOverflow: 'ellipsis',   // 保險：避免意外換行
+                    flexShrink: 0               // 不允許按鈕被擠壓縮小
+                });
                 sb.after(b);
                 b.onclick = () => startDownload(v);
                 if (isDownloaded(v)) markDownloadedCardById(v);
