@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Hanime1 [fetch + blob] Download + 管理清單(暫時只顯示圖示)
 // @namespace    http://tampermonkey.net/
-// @version      1.56
+// @version      1.57
 // @updateURL    https://github.com/taste-latte/Hanime1-fetch-blob-Download/raw/refs/heads/main/Hanime1%20%5Bfetch%20+%20blob%5D%20Download.meta.js
 // @downloadURL  https://github.com/taste-latte/Hanime1-fetch-blob-Download/raw/refs/heads/main/Hanime1%20%5Bfetch%20+%20blob%5D%20Download.user.js
-// @description  (功能)使用 videoId 精準紀錄已下載影片，下載影片自動命名，管理清單支援單筆刪除與固定清除按鈕以及匯出與匯入紀錄。
-// @description  (更新)下載紀錄清單搜尋時會凸顯搜尋文字，搜尋時會從整個清單中找尋影片名稱，下載紀錄清單新增影片圖示可以跳轉到該影片觀看網頁
-// @description  (待修正)下載清單暫時只有圖示(加上文字會使影片縮圖變小)
+// @description  (功能)使用 videoId 精準紀錄已下載影片，下載影片自動命名，管理清單支援單筆刪除與固定清除按鈕以及匯出與匯入紀錄，新增觀看紀錄。
+// @description  (更新)新增觀看紀錄
+// @description  (待修正)下載清單暫時只有圖示(加上文字會使影片縮圖變小)，搜尋欄功能失效，觀看紀錄沒有翻頁
 // @match        *://hanime1.me/*
 // @grant        none
 // ==/UserScript==
@@ -18,12 +18,13 @@
 5.下載清單擁有頁碼跳頁與滾動換頁
 6.圖釘功能可以選擇是否使用滾動頁面
 7.下載記錄搜尋時會從整個清單中找尋擁有關鍵字的影片名稱同時凸顯搜尋文字
-8.下載紀錄清單點擊影片圖示會跳轉到該影片觀看網頁*/
+8.下載紀錄清單點擊影片圖示會跳轉到該影片觀看網頁
+9.新增觀看紀錄*/
 (function () {
     'use strict';
 
     const STORAGE_KEY = 'hanime1_downloaded_v2';
-
+    const WATCHED_KEY = 'tm-watched-list';
     function getDownloadedList() {
         return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     }
@@ -136,6 +137,99 @@
         return name.replace(/-\(hanime1\.me\)-\d+p\.MP4$/i, '').trim();
     }
 
+
+
+    function updateWatchList() {
+        const watchList = document.getElementById('tm-watch-list');
+        const all = JSON.parse(localStorage.getItem(WATCH_KEY) || '[]');
+        let filtered = all;
+
+        // 搜尋關鍵字
+        if (currentWatchSearchTerm) {
+            filtered = all.filter(item =>
+                                  item.name?.toLowerCase().includes(currentWatchSearchTerm.toLowerCase())
+                                 );
+        }
+
+        const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+        const start = (currentWatchPage - 1) * ITEMS_PER_PAGE;
+        const pageItems = filtered.slice(start, start + ITEMS_PER_PAGE);
+
+        watchList.innerHTML = '';
+
+        if (pageItems.length === 0) {
+            watchList.innerHTML = '<p style="color: #ccc;">尚無觀看紀錄</p>';
+            return;
+        }
+
+        for (const item of pageItems) {
+            const row = document.createElement('div');
+            row.style.borderBottom = '1px solid #444';
+            row.style.padding = '6px 0';
+            row.style.cursor = 'pointer';
+            row.innerHTML = `
+            <strong>${item.name}</strong><br>
+            <small>觀看時間：${item.watchedAt}</small>
+        `;
+        row.onclick = () => {
+            window.open(`https://hanime1.me/watch?v=${item.id}`, '_blank');
+        };
+        watchList.appendChild(row);
+    }
+
+        // ➕ 分頁導覽列
+        const pager = document.createElement('div');
+        pager.style.textAlign = 'center';
+        pager.style.marginTop = '10px';
+
+        for (let i = 1; i <= totalPages; i++) {
+            const btn = document.createElement('button');
+            const pageNum = i; // ✅ 明確綁定變數
+            btn.textContent = i;
+            btn.style.margin = '0 4px';
+            btn.style.padding = '2px 6px';
+            btn.style.background = i === currentWatchPage ? '#888' : '#444';
+            btn.style.color = '#fff';
+            btn.style.border = 'none';
+            btn.style.borderRadius = '4px';
+            btn.style.cursor = 'pointer';
+
+            btn.onclick = () => {
+                currentWatchPage = pageNum;
+                updateWatchList();
+            };
+            pager.appendChild(btn);
+        }
+
+        watchList.appendChild(pager);
+    }
+
+
+    function addWatchRecord(id, name) {
+        const key = 'WATCH_HISTORY_KEY';
+        const list = JSON.parse(localStorage.getItem(key) || '[]');
+
+        // 如果已存在就略過
+        if (list.some(item => item.id === id)) return;
+
+        list.push({
+            id,
+            name,
+            watchedAt: new Date().toISOString().slice(0, 10)
+        });
+
+        localStorage.setItem(key, JSON.stringify(list));
+    }
+
+    function recordWatchHistory(id, name) {
+        const key = 'WATCH_HISTORY_KEY';
+        const list = JSON.parse(localStorage.getItem(key) || '[]');
+        if (!list.some(item => item.id === id)) {
+            list.push({ id, name });
+            localStorage.setItem(key, JSON.stringify(list));
+        }
+    }
+
     async function startDownload(videoId) {
         showDownloadingTip('loading');
         const rawTitle = await fetchTitle(videoId);
@@ -203,7 +297,10 @@
     let overScrollTimestamp = 0;
     let scrollTimeout = null;
     let scrollToBottomAfterUpdate = false;
-
+    let currentWatchPage = 1;
+    let currentWatchSearchTerm = '';
+    const ITEMS_PER_PAGE = 10;
+    const WATCH_KEY = 'WATCH_HISTORY_KEY';
     function highlightDisplayName(name, keyword) {
         const escapedKeyword = keyword.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(`(${escapedKeyword})`, 'gi');
@@ -226,6 +323,7 @@
 
         let downloaded = getDownloadedList();
         const duplicateIds = JSON.parse(sessionStorage.getItem('tm-import-duplicates') || '[]');
+        const watchData = JSON.parse(localStorage.getItem('WATCH_HISTORY_KEY') || '[]');
 
         // 搜尋邏輯：根據 currentSearchTerm 過濾所有記錄
         if (currentSearchTerm.trim()) {
@@ -564,6 +662,7 @@
             lc.appendChild(pagination);
         }}
 
+    let currentTab = 'download';
     function createDownloadManager() {
         const navIcons = document.querySelectorAll('.nav-icon.pull-right');
         const btn = document.createElement('a');
@@ -606,10 +705,10 @@
         topBar.style.display = 'flex';
         topBar.style.gap = '6px';
         topBar.style.marginBottom = '8px';
-        const search = document.createElement('input');
-        search.placeholder = '搜尋...';
-        search.type = 'search';
-        Object.assign(search.style, {
+        const downloadSearch = document.createElement('input');
+        downloadSearch.placeholder = '搜尋下載紀錄...';
+        downloadSearch.type = 'search';
+        Object.assign(downloadSearch.style, {
             flex: '1',
             padding: '6px',
             borderRadius: '4px',
@@ -617,6 +716,28 @@
             background: '#333',
             color: '#fff'
         });
+        downloadSearch.oninput = () => {
+            currentSearchTerm = downloadSearch.value;
+            currentPage = 1;
+            updateDownloadList();
+        };
+        const watchSearch = document.createElement('input');
+        watchSearch.placeholder = '搜尋觀看紀錄...';
+        watchSearch.type = 'search';
+        Object.assign(watchSearch.style, {
+            flex: '1',
+            padding: '6px',
+            borderRadius: '4px',
+            border: 'none',
+            background: '#333',
+            color: '#fff',
+            display: 'none' // 初始隱藏
+        });
+        watchSearch.oninput = () => {
+            currentWatchSearchTerm = watchSearch.value;
+            currentWatchPage = 1;
+            updateWatchList();
+        };
         const exportBtn = document.createElement('button');
         exportBtn.textContent = '📤';
         exportBtn.title = '匯出下載紀錄';
@@ -694,7 +815,8 @@
             input.click();
         };
 
-        topBar.appendChild(search);
+        topBar.appendChild(downloadSearch);
+        topBar.appendChild(watchSearch);
         topBar.appendChild(exportBtn);
         topBar.appendChild(importBtn);
         topBar.id = 'tm-search-bar';
@@ -703,15 +825,18 @@
         list.id = 'tm-download-list';
         panel.appendChild(list);
 
-        const clearBtn = document.createElement('button');
-        clearBtn.textContent = '清除全部紀錄';
-        Object.assign(clearBtn.style, {
+
+
+
+        const clearDownloadBtn = document.createElement('button');
+        clearDownloadBtn.textContent = '清除全部下載紀錄';
+        Object.assign(clearDownloadBtn.style, {
             position: 'sticky', bottom: '0', marginTop: '10px',
             width: '100%', padding: '8px', fontWeight: 'bold',
             background: 'rgba(200,0,0,0.8)', border: 'none',
             borderRadius: '4px', color: 'white', cursor: 'pointer'
         });
-        clearBtn.onclick = () => {
+        clearDownloadBtn.onclick = () => {
             if (confirm('確定清除所有下載紀錄？')) {
                 currentPage = 1;
                 localStorage.removeItem(STORAGE_KEY);
@@ -719,11 +844,99 @@
             }
         };
 
-        panel.appendChild(clearBtn);
-        search.oninput = () => {
-            currentSearchTerm = search.value;
-            currentPage = 1;
+        const clearWatchBtn = document.createElement('button');
+        clearWatchBtn.textContent = '清除全部觀看紀錄';
+        Object.assign(clearWatchBtn.style, {
+            position: 'sticky', bottom: '0', marginTop: '10px',
+            width: '100%', padding: '8px', fontWeight: 'bold',
+            background: 'rgba(200,0,0,0.8)', border: 'none',
+            borderRadius: '4px', color: 'white', cursor: 'pointer'
+        });
+        clearWatchBtn.onclick = () => {
+            if (confirm('確定清除所有觀看紀錄？')) {
+                currentWatchPage = 1;
+                localStorage.removeItem(WATCH_KEY);
+                updateWatchList();
+            }
+        };
+
+        panel.appendChild(clearDownloadBtn);
+        panel.appendChild(clearWatchBtn);
+        clearWatchBtn.style.display = 'none';  // 預設隱藏觀看清除按鈕
+
+        const tabBar = document.createElement('div');
+        tabBar.style.display = 'flex';
+        tabBar.style.gap = '8px';
+        tabBar.style.marginBottom = '8px';
+
+        const tabDownload = document.createElement('button');
+        tabDownload.textContent = '📥 下載紀錄';
+        tabDownload.className = 'tm-tab-btn active-tab';
+
+        const tabWatch = document.createElement('button');
+        tabWatch.textContent = '👁️ 觀看紀錄';
+        tabWatch.className = 'tm-tab-btn';
+
+        [tabDownload, tabWatch].forEach(btn => {
+            Object.assign(btn.style, {
+                flex: '1',
+                padding: '6px',
+                borderRadius: '4px',
+                border: 'none',
+                background: '#222',
+                color: '#fff',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+            });
+            btn.onmouseenter = () => {
+                btn.style.background = '#333';
+            };
+            btn.onmouseleave = () => {
+                btn.style.background = btn.classList.contains('active-tab') ? '#444' : '#222';
+            };
+        });
+
+        tabBar.appendChild(tabDownload);
+        tabBar.appendChild(tabWatch);
+        panel.insertBefore(tabBar, list); // 插入在搜尋欄與紀錄列表中間
+
+        // 建立觀看紀錄容器
+        const watchList = document.createElement('div');
+        watchList.id = 'tm-watch-list';
+        watchList.style.display = 'none';
+        panel.insertBefore(watchList, clearDownloadBtn);
+
+        // 切換邏輯
+        tabDownload.onclick = () => {
+            tabDownload.classList.add('active-tab');
+            tabWatch.classList.remove('active-tab');
+
+            list.style.display = 'block';
+            watchList.style.display = 'none';
+
+            downloadSearch.style.display = 'block';
+            watchSearch.style.display = 'none';
+
+            clearDownloadBtn.style.display = 'block';
+            clearWatchBtn.style.display = 'none';
+
             updateDownloadList();
+        };
+
+        tabWatch.onclick = () => {
+            tabDownload.classList.remove('active-tab');
+            tabWatch.classList.add('active-tab');
+
+            list.style.display = 'none';
+            watchList.style.display = 'block';
+
+            downloadSearch.style.display = 'none';
+            watchSearch.style.display = 'block';
+
+            clearDownloadBtn.style.display = 'none';
+            clearWatchBtn.style.display = 'block';
+
+            updateWatchList();
         };
 
     }
@@ -776,6 +989,8 @@
         const v = new URL(location.href).searchParams.get('v');
         if (v && !document.getElementById('tm-dl-btn')) {
             const sb = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('訂閱'));
+            const videoTitle = document.querySelector('h1')?.textContent?.trim() || `ID ${v}`;
+            addWatchRecord(v, videoTitle);
             if (sb) {
                 const b = document.createElement('button');
                 b.id = 'tm-dl-btn';
@@ -873,6 +1088,21 @@
         const btn = document.querySelector('#search-nav-desktop .tm-sticky-download-btn');
         if (btn) btn.remove();
     }
+
+    (function recordOnWatchPage() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const vid = urlParams.get('v');
+        if (!vid) return;
+
+        // 嘗試抓 DOM 中的影片標題
+        let name = document.querySelector('h3#shareBtn-title')?.textContent
+        || document.querySelector('h1')?.textContent
+        || document.title;
+
+        name = name.trim();
+
+        addWatchRecord(vid, name);
+    })();
 
     // 觀察 #main-nav 是否可見
     const mainNav = document.querySelector('#main-nav');
