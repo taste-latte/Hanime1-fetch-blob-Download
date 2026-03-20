@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Hanime1 [fetch + blob] Download + 管理清單(暫時只顯示圖示)
 // @namespace    http://tampermonkey.net/
-// @version      1.67
+// @version      1.68
 // @updateURL    https://github.com/taste-latte/Hanime1-fetch-blob-Download/raw/refs/heads/main/Hanime1%20%5Bfetch%20+%20blob%5D%20Download.meta.js
 // @downloadURL  https://github.com/taste-latte/Hanime1-fetch-blob-Download/raw/refs/heads/main/Hanime1%20%5Bfetch%20+%20blob%5D%20Download.user.js
 // @description  (功能簡介)下載Hanime1影片並自動命名同時記錄到清單中且標註已下載，能將下載紀錄匯出匯入
